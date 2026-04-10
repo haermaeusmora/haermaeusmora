@@ -1,0 +1,58 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace pgDataAccess.Models;
+
+[Table("products")]
+public class Product
+{
+    [Key]
+    [Column("article")]
+    public string Article { get; set; } = string.Empty;
+
+    [Required]
+    [Column("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [Required]
+    [Column("unit")]
+    public string Unit { get; set; } = "шт.";
+
+    [Column("price")]
+    public decimal Price { get; set; }
+
+    [Column("category_id")]
+    public int CategoryId { get; set; }
+
+    [Column("manufacturer_id")]
+    public int ManufacturerId { get; set; }
+
+    [Column("supplier_id")]
+    public int SupplierId { get; set; }
+
+    [Column("discount_percent")]
+    public int DiscountPercent { get; set; }
+
+    [Column("stock_quantity")]
+    public int StockQuantity { get; set; }
+
+    [Column("description")]
+    public string? Description { get; set; }
+
+    [Column("photo_path")]
+    public string? PhotoPath { get; set; }
+
+    [ForeignKey(nameof(CategoryId))]
+    public Category? Category { get; set; }
+
+    [ForeignKey(nameof(ManufacturerId))]
+    public Manufacturer? Manufacturer { get; set; }
+
+    [ForeignKey(nameof(SupplierId))]
+    public Supplier? Supplier { get; set; }
+
+    public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+
+    [NotMapped]
+    public decimal DiscountedPrice => Price * (1 - DiscountPercent / 100m);
+}

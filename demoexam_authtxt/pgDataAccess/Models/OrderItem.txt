@@ -1,0 +1,36 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace pgDataAccess.Models;
+
+[Table("order_items")]
+public class OrderItem
+{
+    [Key]
+    [Column("order_id")]
+    public int OrderId { get; set; }
+
+    [Key]
+    [Column("product_article")]
+    public string ProductArticle { get; set; } = string.Empty;
+
+    [Required]
+    [Column("quantity")]
+    public int Quantity { get; set; }
+
+    [ForeignKey(nameof(OrderId))]
+    public Order? Order { get; set; }
+
+    [ForeignKey(nameof(ProductArticle))]
+    public Product? Product { get; set; }
+
+    [NotMapped]
+    public decimal TotalPrice
+    {
+        get
+        {
+            if (Product == null) return 0;
+            return Product.DiscountedPrice * Quantity;
+        }
+    }
+}

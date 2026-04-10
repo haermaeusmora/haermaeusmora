@@ -1,0 +1,164 @@
+// окно добавления и редактирования заказа.
+// без параметров — создание, с orderId — редактирование.
+// собирает позиции заказа в observablecollection и сохраняет вместе с заказом.
+
+using System.Collections.ObjectModel;
+using System.Windows;
+using System.Windows.Controls;
+using Microsoft.EntityFrameworkCore;
+using pgDataAccess;
+using pgDataAccess.Models;
+
+namespace WpfApp;
+
+public partial class AddOrderWindow : Window
+{
+    private readonly int? _editOrderId;
+    private readonly ObservableCollection<OrderLine> _lines = new();
+
+    public AddOrderWindow(int? orderId = null)
+    {
+        InitializeComponent();
+        _editOrderId = orderId;
+        if (_editOrderId != null) Title = "Редактировать заказ";
+        ItemsList.ItemsSource = _lines;
+        Loaded += AddOrderWindow_Loaded;
+    }
+
+    private async void AddOrderWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        using var db = new ApplicationDbContext();
+
+        ClientBox.ItemsSource = await db.Users.Where(u => u.RoleId == 1).ToListAsync();
+        PickupBox.ItemsSource = await db.PickupPoints.ToListAsync();
+        ProductBox.ItemsSource = await db.Products.ToListAsync();
+
+        OrderDateBox.SelectedDate = DateTime.Today;
+        DeliveryDateBox.SelectedDate = DateTime.Today.AddDays(7);
+        CodeBox.Text = new Random().Next(900, 999).ToString();
+
+        if (_editOrderId != null)
+        {
+            var order = await db.Orders
+                .Include(o => o.OrderItems)
+                .FirstOrDefaultAsync(o => o.Id == _editOrderId);
+
+            if (order == null) { Close(); return; }
+
+            ClientBox.SelectedItem = ClientBox.Items.Cast<User>().FirstOrDefault(u => u.Id == order.ClientId);
+            PickupBox.SelectedItem = PickupBox.Items.Cast<PickupPoint>().FirstOrDefault(p => p.Id == order.PickupPointId);
+            OrderDateBox.SelectedDate = order.OrderDate;
+            DeliveryDateBox.SelectedDate = order.DeliveryDate;
+            CodeBox.Text = order.PickupCode.ToString();
+
+            var statuses = new[] { "Новый", "В обработке", "Завершён", "Отменён" };
+            var idx = Array.IndexOf(statuses, order.Status);
+            StatusBox.SelectedIndex = idx >= 0 ? idx : 0;
+
+            foreach (var oi in order.OrderItems)
+            {
+                var productName = await db.Products
+                    .Where(p => p.Article == oi.ProductArticle)
+                    .Select(p => p.Name).FirstOrDefaultAsync();
+                _lines.Add(new OrderLine
+                {
+                    Article = oi.ProductArticle,
+                    Name = productName ?? oi.ProductArticle,
+                    Qty = oi.Quantity
+                });
+            }
+        }
+    }
+
+    private void AddItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (ProductBox.SelectedItem is not Product p)
+        { MessageBox.Show("Выберите товар."); return; }
+        if (!int.TryParse(QtyBox.Text, out int qty) || qty <= 0)
+        { MessageBox.Show("Неверное количество."); return; }
+
+        var existing = _lines.FirstOrDefault(l => l.Article == p.Article);
+        if (existing != null) existing.Qty += qty;
+        else _lines.Add(new OrderLine { Article = p.Article, Name = p.Name, Qty = qty });
+    }
+
+    private async void Save_Click(object sender, RoutedEventArgs e)
+    {
+        if (ClientBox.SelectedItem is not User client)
+        { MessageBox.Show("Выберите клиента."); return; }
+        if (PickupBox.SelectedItem is not PickupPoint pp)
+        { MessageBox.Show("Выберите пункт выдачи."); return; }
+        if (_lines.Count == 0)
+        { MessageBox.Show("Добавьте хотя бы одну позицию."); return; }
+
+        var status = ((ComboBoxItem)StatusBox.SelectedItem)?.Content?.ToString() ?? "Новый";
+        var code = int.TryParse(CodeBox.Text, out var c) ? c : new Random().Next(900, 999);
+
+        using var db = new ApplicationDbContext();
+
+        if (_editOrderId != null)
+        {
+            var order = await db.Orders
+                .Include(o => o.OrderItems)
+                .FirstAsync(o => o.Id == _editOrderId);
+
+            order.ClientId = client.Id;
+            order.PickupPointId = pp.Id;
+            order.OrderDate = OrderDateBox.SelectedDate!.Value;
+            order.DeliveryDate = DeliveryDateBox.SelectedDate!.Value;
+            order.Status = status;
+            order.PickupCode = code;
+
+            db.OrderItems.RemoveRange(order.OrderItems);
+
+            foreach (var line in _lines)
+            {
+                await db.OrderItems.AddAsync(new OrderItem
+                {
+                    OrderId = order.Id,
+                    ProductArticle = line.Article,
+                    Quantity = line.Qty
+                });
+            }
+        }
+        else
+        {
+            var order = new Order
+            {
+                ClientId = client.Id,
+                PickupPointId = pp.Id,
+                OrderDate = OrderDateBox.SelectedDate!.Value,
+                DeliveryDate = DeliveryDateBox.SelectedDate!.Value,
+                Status = status,
+                PickupCode = code
+            };
+
+            db.Orders.Add(order);
+            await db.SaveChangesAsync();
+
+            foreach (var line in _lines)
+            {
+                await db.OrderItems.AddAsync(new OrderItem
+                {
+                    OrderId = order.Id,
+                    ProductArticle = line.Article,
+                    Quantity = line.Qty
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
+        MessageBox.Show(_editOrderId != null ? "Заказ обновлён." : "Заказ создан.");
+        DialogResult = true;
+        Close();
+    }
+
+    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
+
+    public class OrderLine
+    {
+        public string Article { get; set; } = "";
+        public string Name { get; set; } = "";
+        public int Qty { get; set; }
+    }
+}

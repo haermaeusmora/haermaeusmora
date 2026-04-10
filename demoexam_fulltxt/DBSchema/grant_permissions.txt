@@ -1,0 +1,6 @@
+-- Запустить под ролью postgres (или другой с правами CREATE на public)
+-- Дать роли app права на создание объектов в схеме public
+
+GRANT ALL ON SCHEMA public TO app;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO app;

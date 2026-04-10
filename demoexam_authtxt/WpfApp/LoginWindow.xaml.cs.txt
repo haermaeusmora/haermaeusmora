@@ -1,0 +1,94 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using Microsoft.EntityFrameworkCore;
+using pgDataAccess;
+using pgDataAccess.Services;
+
+namespace WpfApp;
+
+public partial class LoginWindow : Window
+{
+    public LoginWindow()
+    {
+        InitializeComponent();
+
+        PasswordBox.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Enter)
+                LoginButton_Click(this, new RoutedEventArgs());
+        };
+        LoginTextBox.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Enter)
+                LoginButton_Click(this, new RoutedEventArgs());
+        };
+    }
+
+    private async void LoginButton_Click(object sender, RoutedEventArgs e)
+    {
+        var login = LoginTextBox.Text.Trim();
+        var password = PasswordBox.Password;
+
+        if (string.IsNullOrWhiteSpace(login))
+        {
+            ShowError("Введите логин");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            ShowError("Введите пароль");
+            return;
+        }
+
+        LoginButton.IsEnabled = false;
+        LoginButton.Content = "Вход...";
+        ErrorText.Visibility = Visibility.Collapsed;
+
+        try
+        {
+            var authService = new AuthService();
+            var user = await authService.AuthenticateAsync(login, password);
+
+            if (user == null)
+            {
+                ShowError("Неверный логин или пароль.\n\nДоступные учётные данные:\nuser / 12345\nmanager / 12345\nadmin / 12345");
+                return;
+            }
+
+            Session.Instance.SetUser(user);
+            DialogResult = true;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Ошибка авторизации: {ex.Message}");
+        }
+        finally
+        {
+            LoginButton.IsEnabled = true;
+            LoginButton.Content = "Войти";
+        }
+    }
+
+    private void GuestButton_Click(object sender, RoutedEventArgs e)
+    {
+        Session.Instance.SetGuest();
+        DialogResult = true;
+        Close();
+    }
+
+    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        DialogResult = false;
+        Close();
+    }
+
+    private void ShowError(string message)
+    {
+        ErrorText.Text = message;
+        ErrorText.Visibility = Visibility.Visible;
+    }
+}

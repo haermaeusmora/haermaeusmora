@@ -1,0 +1,113 @@
+// окно добавления и редактирования товара.
+// без параметров — добавление, с article — редактирование.
+// загружает справочники в комбобоксы и сохраняет через ef core.
+
+using System.Windows;
+using Microsoft.EntityFrameworkCore;
+using pgDataAccess;
+using pgDataAccess.Models;
+
+namespace WpfApp;
+
+public partial class AddProductWindow : Window
+{
+    private readonly string? _editArticle;
+
+    public AddProductWindow(string? article = null)
+    {
+        InitializeComponent();
+        _editArticle = article;
+        if (_editArticle != null)
+            Title = "Редактировать товар";
+        Loaded += AddProductWindow_Loaded;
+    }
+
+    private async void AddProductWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        using var db = new ApplicationDbContext();
+
+        CategoryBox.ItemsSource = await db.Categories.ToListAsync();
+        ManufacturerBox.ItemsSource = await db.Manufacturers.ToListAsync();
+        SupplierBox.ItemsSource = await db.Suppliers.ToListAsync();
+
+        if (_editArticle != null)
+        {
+            var product = await db.Products.FirstOrDefaultAsync(p => p.Article == _editArticle);
+            if (product == null) { Close(); return; }
+
+            ArticleBox.Text = product.Article;
+            ArticleBox.IsReadOnly = true;
+            NameBox.Text = product.Name;
+            UnitBox.Text = product.Unit;
+            PriceBox.Text = product.Price.ToString();
+            DiscountBox.Text = product.DiscountPercent.ToString();
+            StockBox.Text = product.StockQuantity.ToString();
+            DescBox.Text = product.Description ?? "";
+            PhotoBox.Text = product.PhotoPath ?? "";
+
+            CategoryBox.SelectedItem = CategoryBox.Items.Cast<Category>().FirstOrDefault(c => c.Id == product.CategoryId);
+            ManufacturerBox.SelectedItem = ManufacturerBox.Items.Cast<Manufacturer>().FirstOrDefault(m => m.Id == product.ManufacturerId);
+            SupplierBox.SelectedItem = SupplierBox.Items.Cast<Supplier>().FirstOrDefault(s => s.Id == product.SupplierId);
+        }
+    }
+
+    private async void Save_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(ArticleBox.Text) ||
+            string.IsNullOrWhiteSpace(NameBox.Text) ||
+            string.IsNullOrWhiteSpace(PriceBox.Text))
+        { MessageBox.Show("Заполните Артикул, Название и Цену."); return; }
+        if (!decimal.TryParse(PriceBox.Text, out decimal price))
+        { MessageBox.Show("Неверная цена."); return; }
+        if (CategoryBox.SelectedItem is not Category cat)
+        { MessageBox.Show("Выберите категорию."); return; }
+        if (ManufacturerBox.SelectedItem is not Manufacturer man)
+        { MessageBox.Show("Выберите производителя."); return; }
+        if (SupplierBox.SelectedItem is not Supplier sup)
+        { MessageBox.Show("Выберите поставщика."); return; }
+
+        using var db = new ApplicationDbContext();
+
+        if (_editArticle != null)
+        {
+            var p = await db.Products.FirstAsync(x => x.Article == _editArticle);
+            p.Name = NameBox.Text.Trim();
+            p.Unit = UnitBox.Text.Trim();
+            p.Price = price;
+            p.CategoryId = cat.Id;
+            p.ManufacturerId = man.Id;
+            p.SupplierId = sup.Id;
+            p.DiscountPercent = int.TryParse(DiscountBox.Text, out var d) ? d : 0;
+            p.StockQuantity = int.TryParse(StockBox.Text, out var s) ? s : 0;
+            p.Description = string.IsNullOrWhiteSpace(DescBox.Text) ? null : DescBox.Text.Trim();
+            p.PhotoPath = string.IsNullOrWhiteSpace(PhotoBox.Text) ? null : PhotoBox.Text.Trim();
+        }
+        else
+        {
+            if (await db.Products.AnyAsync(x => x.Article == ArticleBox.Text.Trim()))
+            { MessageBox.Show("Такой артикул уже существует."); return; }
+
+            await db.Products.AddAsync(new Product
+            {
+                Article = ArticleBox.Text.Trim(),
+                Name = NameBox.Text.Trim(),
+                Unit = UnitBox.Text.Trim(),
+                Price = price,
+                CategoryId = cat.Id,
+                ManufacturerId = man.Id,
+                SupplierId = sup.Id,
+                DiscountPercent = int.TryParse(DiscountBox.Text, out var d) ? d : 0,
+                StockQuantity = int.TryParse(StockBox.Text, out var s) ? s : 0,
+                Description = string.IsNullOrWhiteSpace(DescBox.Text) ? null : DescBox.Text.Trim(),
+                PhotoPath = string.IsNullOrWhiteSpace(PhotoBox.Text) ? null : PhotoBox.Text.Trim()
+            });
+        }
+
+        await db.SaveChangesAsync();
+        MessageBox.Show(_editArticle != null ? "Товар обновлён." : "Товар добавлен.");
+        DialogResult = true;
+        Close();
+    }
+
+    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
+}

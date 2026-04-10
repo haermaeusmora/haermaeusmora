@@ -1,0 +1,229 @@
+// импорт данных из csv файлов в бд через ef core.
+// сначала удаляет старые данные, потом читает csv и сохраняет в таблицы.
+// после каждого импорта сбрасывает sequence чтобы autoincrement работал корректно.
+
+using System.Globalization;
+using System.IO;
+using System.Text;
+using Microsoft.EntityFrameworkCore;
+using pgDataAccess;
+using pgDataAccess.Models;
+
+namespace WpfApp;
+
+public class CsvImporter
+{
+    private readonly string _dir;
+
+    public CsvImporter(string importsDirectory)
+    {
+        _dir = importsDirectory;
+    }
+
+    public async Task ImportAllAsync()
+    {
+        using var db = new ApplicationDbContext();
+        await ClearData(db);
+        await ImportCategories(db);
+        await ImportManufacturers(db);
+        await ImportSuppliers(db);
+        await ImportRoles(db);
+        await ImportUsers(db);
+        await ImportPickupPoints(db);
+        await ImportProducts(db);
+        await ImportOrders(db);
+        await ImportOrderItems(db);
+    }
+
+    private async Task ClearData(ApplicationDbContext db)
+    {
+        db.OrderItems.RemoveRange(db.OrderItems.ToList());
+        await db.SaveChangesAsync();
+
+        db.Orders.RemoveRange(db.Orders.ToList());
+        await db.SaveChangesAsync();
+
+        db.Products.RemoveRange(db.Products.ToList());
+        await db.SaveChangesAsync();
+
+        db.Users.RemoveRange(db.Users.ToList());
+        await db.SaveChangesAsync();
+
+        db.PickupPoints.RemoveRange(db.PickupPoints.ToList());
+        await db.SaveChangesAsync();
+
+        db.Categories.RemoveRange(db.Categories.ToList());
+        db.Manufacturers.RemoveRange(db.Manufacturers.ToList());
+        db.Suppliers.RemoveRange(db.Suppliers.ToList());
+        db.Roles.RemoveRange(db.Roles.ToList());
+        await db.SaveChangesAsync();
+    }
+
+    private async Task ImportCategories(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("categories.csv");
+        foreach (var p in lines)
+            await db.Categories.AddAsync(new Category { Id = int.Parse(p[0]), Name = p[1].Trim('"') });
+        await db.SaveChangesAsync();
+        await ResetSeq(db, "categories_id_seq");
+    }
+
+    private async Task ImportManufacturers(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("manufacturers.csv");
+        foreach (var p in lines)
+            await db.Manufacturers.AddAsync(new Manufacturer { Id = int.Parse(p[0]), Name = p[1].Trim('"') });
+        await db.SaveChangesAsync();
+        await ResetSeq(db, "manufacturers_id_seq");
+    }
+
+    private async Task ImportSuppliers(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("suppliers.csv");
+        foreach (var p in lines)
+            await db.Suppliers.AddAsync(new Supplier { Id = int.Parse(p[0]), Name = p[1].Trim('"') });
+        await db.SaveChangesAsync();
+        await ResetSeq(db, "suppliers_id_seq");
+    }
+
+    private async Task ImportRoles(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("roles.csv");
+        foreach (var p in lines)
+            await db.Roles.AddAsync(new Role { Id = int.Parse(p[0]), Name = p[1].Trim('"') });
+        await db.SaveChangesAsync();
+        await ResetSeq(db, "roles_id_seq");
+    }
+
+    private async Task ImportUsers(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("users.csv");
+        foreach (var p in lines)
+        {
+            await db.Users.AddAsync(new User
+            {
+                Id = int.Parse(p[0]),
+                Login = p[1].Trim('"'),
+                PasswordHash = p[2].Trim('"'),
+                FullName = p[3].Trim('"'),
+                RoleId = int.Parse(p[4])
+            });
+        }
+        await db.SaveChangesAsync();
+        await ResetSeq(db, "users_id_seq");
+    }
+
+    private async Task ImportPickupPoints(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("pickup_points.csv");
+        foreach (var p in lines)
+        {
+            await db.PickupPoints.AddAsync(new PickupPoint
+            {
+                Id = int.Parse(p[0]),
+                Address = p[1].Trim('"')
+            });
+        }
+        await db.SaveChangesAsync();
+        await ResetSeq(db, "pickup_points_id_seq");
+    }
+
+    private async Task ImportProducts(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("products.csv");
+        foreach (var p in lines)
+        {
+            await db.Products.AddAsync(new Product
+            {
+                Article = p[0].Trim('"'),
+                Name = p[1].Trim('"'),
+                Unit = p[2].Trim('"'),
+                Price = decimal.Parse(p[3], CultureInfo.InvariantCulture),
+                CategoryId = int.Parse(p[4]),
+                ManufacturerId = int.Parse(p[5]),
+                SupplierId = int.Parse(p[6]),
+                DiscountPercent = int.Parse(p[7]),
+                StockQuantity = int.Parse(p[8]),
+                Description = p[9].Trim('"'),
+                PhotoPath = p.Length > 10 ? p[10].Trim('"') : null
+            });
+        }
+        await db.SaveChangesAsync();
+    }
+
+    private async Task ImportOrders(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("orders.csv");
+        foreach (var p in lines)
+        {
+            await db.Orders.AddAsync(new Order
+            {
+                Id = int.Parse(p[0]),
+                ClientId = int.Parse(p[1]),
+                PickupPointId = int.Parse(p[2]),
+                OrderDate = DateTime.Parse(p[3]),
+                DeliveryDate = DateTime.Parse(p[4]),
+                Status = p[5].Trim('"'),
+                PickupCode = int.Parse(p[6])
+            });
+        }
+        await db.SaveChangesAsync();
+        await ResetSeq(db, "orders_id_seq");
+    }
+
+    private async Task ImportOrderItems(ApplicationDbContext db)
+    {
+        var lines = ReadCsv("order_items.csv");
+        foreach (var p in lines)
+        {
+            await db.OrderItems.AddAsync(new OrderItem
+            {
+                OrderId = int.Parse(p[0]),
+                ProductArticle = p[1].Trim('"'),
+                Quantity = int.Parse(p[2])
+            });
+        }
+        await db.SaveChangesAsync();
+    }
+
+    // сбрасывает sequence на max(id) чтобы следующий serial-автоинкремент не конфликтовал с существующими id
+    private async Task ResetSeq(ApplicationDbContext db, string seqName)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            $"SELECT setval('{seqName}', COALESCE((SELECT MAX(id) FROM {seqName.Replace("_id_seq", "")}), 1))");
+    }
+
+    // читает csv-файл, пропускает заголовок, парсит каждую строку через ParseCsvLine
+    private string[][] ReadCsv(string fileName)
+    {
+        var path = Path.Combine(_dir, fileName);
+        if (!File.Exists(path)) return Array.Empty<string[]>();
+
+        var lines = File.ReadAllLines(path, Encoding.UTF8);
+        var result = new List<string[]>();
+        for (int i = 1; i < lines.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(lines[i])) continue;
+            result.Add(ParseCsvLine(lines[i]));
+        }
+        return result.ToArray();
+    }
+
+    // парсит строку csv учитывая кавычки, чтобы запятые внутри кавычек не считались разделителем
+    private string[] ParseCsvLine(string line)
+    {
+        var parts = new List<string>();
+        var current = "";
+        bool inQuotes = false;
+
+        foreach (char c in line)
+        {
+            if (c == '"') { inQuotes = !inQuotes; current += c; }
+            else if (c == ',' && !inQuotes) { parts.Add(current); current = ""; }
+            else { current += c; }
+        }
+
+        parts.Add(current);
+        return parts.ToArray();
+    }
+}

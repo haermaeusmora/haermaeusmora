@@ -1,0 +1,63 @@
+// контекст бд, через ef core работает с postgresql.
+// содержит все dbset-ы для таблиц и настраивает связи между сущностями.
+// подключение к бд берётся из connectionstring.
+
+using Microsoft.EntityFrameworkCore;
+using pgDataAccess.Models;
+
+namespace pgDataAccess;
+
+public class ApplicationDbContext : DbContext
+{
+    private const string ConnectionString =
+        "Host=localhost;Port=5432;Database=hodotaev;Username=app;Password=123456789";
+
+    public DbSet<Category> Categories => Set<Category>();
+    public DbSet<Manufacturer> Manufacturers => Set<Manufacturer>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<PickupPoint> PickupPoints => Set<PickupPoint>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.UseNpgsql(ConnectionString);
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Order>(e =>
+        {
+            e.Property(o => o.OrderDate).HasColumnType("timestamp without time zone");
+            e.Property(o => o.DeliveryDate).HasColumnType("timestamp without time zone");
+        });
+
+        modelBuilder.Entity<OrderItem>(e =>
+        {
+            e.HasKey(oi => new { oi.OrderId, oi.ProductArticle });
+            e.HasOne(oi => oi.Order).WithMany(o => o.OrderItems).HasForeignKey(oi => oi.OrderId);
+            e.HasOne(oi => oi.Product).WithMany(p => p.OrderItems).HasForeignKey(oi => oi.ProductArticle);
+        });
+
+        modelBuilder.Entity<Order>(e =>
+        {
+            e.HasOne(o => o.Client).WithMany(u => u.Orders).HasForeignKey(o => o.ClientId);
+            e.HasOne(o => o.PickupPoint).WithMany(pp => pp.Orders).HasForeignKey(o => o.PickupPointId);
+        });
+
+        modelBuilder.Entity<Product>(e =>
+        {
+            e.HasOne(p => p.Category).WithMany(c => c.Products).HasForeignKey(p => p.CategoryId);
+            e.HasOne(p => p.Manufacturer).WithMany(m => m.Products).HasForeignKey(p => p.ManufacturerId);
+            e.HasOne(p => p.Supplier).WithMany(s => s.Products).HasForeignKey(p => p.SupplierId);
+        });
+
+        modelBuilder.Entity<User>(e =>
+        {
+            e.HasOne(u => u.Role).WithMany(r => r.Users).HasForeignKey(u => u.RoleId);
+        });
+    }
+}

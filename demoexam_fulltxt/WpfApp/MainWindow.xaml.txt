@@ -1,0 +1,63 @@
+<Window x:Class="WpfApp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Магазин обуви" Height="600" Width="1000"
+        WindowStartupLocation="CenterScreen">
+    <DockPanel>
+        <Menu DockPanel.Dock="Top" Background="#F0F0F0">
+            <MenuItem Header="Файл">
+                <MenuItem Header="Импорт данных (CSV)" Click="ImportCsv_Click"/>
+                <Separator/>
+                <MenuItem Header="Выход" Click="Exit_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" BorderBrush="#CCC" BorderThickness="1" Margin="5" Background="#F5F5F5">
+                <DockPanel>
+                    <ComboBox DockPanel.Dock="Top" x:Name="ViewModeCombo" Margin="5"
+                              SelectionChanged="ViewModeCombo_SelectionChanged">
+                        <ComboBoxItem Content="Товары" IsSelected="True"/>
+                        <ComboBoxItem Content="Заказы"/>
+                    </ComboBox>
+
+                    <ListBox x:Name="MainList" Background="Transparent" BorderThickness="0"
+                             SelectionChanged="MainList_SelectionChanged"
+                             MouseDoubleClick="MainList_MouseDoubleClick">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Добавить" Click="Add_Click"/>
+                                <MenuItem Header="Изменить" Click="Edit_Click"/>
+                                <MenuItem Header="Удалить" Click="Delete_Click"/>
+                                <Separator/>
+                                <MenuItem Header="Обновить" Click="Refresh_Click"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="3">
+                                    <TextBlock Text="{Binding Title}" FontWeight="Bold" FontSize="13"/>
+                                    <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="Gray"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#CCC"/>
+
+            <Border Grid.Column="2" BorderBrush="#CCC" BorderThickness="1" Margin="5" Background="White">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
+                    <ContentControl x:Name="DetailsPanel"/>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

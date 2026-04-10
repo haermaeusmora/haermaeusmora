@@ -1,0 +1,528 @@
+// главное окно приложения.
+// содержит listbox для отображения товаров или заказов, border для деталей справа.
+// контекстное меню через пкм: добавить, изменить, удалить, обновить.
+// верхнее меню: импорт csv, выход на экран входа, выход.
+// в правом верхнем углу — ФИО пользователя.
+
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using Microsoft.EntityFrameworkCore;
+using pgDataAccess;
+using pgDataAccess.Models;
+using pgDataAccess.Services;
+
+namespace WpfApp;
+
+public partial class MainWindow : Window
+{
+    private bool _showProducts = true;
+    private readonly Session _session = Session.Instance;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        // Отображаем ФИО пользователя
+        UserDisplayText.Text = _session.DisplayName;
+
+        // Скрываем переключатель заказов для гостя и клиента
+        if (!_session.CanViewOrders)
+        {
+            ViewModeCombo.Visibility = Visibility.Collapsed;
+            OrdersMenuItem.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            ViewModeCombo.Visibility = Visibility.Visible;
+            OrdersMenuItem.Visibility = Visibility.Visible;
+        }
+
+        // Загружаем данные после отображения
+        Loaded += MainWindow_Loaded;
+    }
+
+    protected override async void OnContentRendered(EventArgs e)
+    {
+        base.OnContentRendered(e);
+        await LoadDataAsync();
+    }
+
+    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        // Загрузка уже идёт в OnContentRendered
+    }
+
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            await Task.Delay(100);
+
+            using var db = new ApplicationDbContext();
+
+            if (_showProducts)
+                await LoadProductsAsync(db);
+            else if (_session.CanViewOrders)
+                await LoadOrdersAsync(db);
+            else
+                ShowDefaultMessage();
+
+            UpdateMenuVisibility();
+        }
+        catch (Exception ex)
+        {
+            ShowDetailsError(ex.Message);
+        }
+    }
+
+    private async Task LoadProductsAsync(ApplicationDbContext db)
+    {
+        var products = await db.Products
+            .Include(p => p.Category)
+            .Include(p => p.Manufacturer)
+            .Include(p => p.Supplier)
+            .ToListAsync();
+
+        MainList.ItemsSource = products.Select(p => new
+        {
+            Title = $"{p.Name} (арт. {p.Article})",
+            Subtitle = $"{p.Category?.Name} | {p.Manufacturer?.Name} | {p.Price} руб. | Остаток: {p.StockQuantity}",
+            Data = p
+        }).ToList();
+
+        ShowDefaultMessage();
+    }
+
+    private async Task LoadOrdersAsync(ApplicationDbContext db)
+    {
+        var orders = await db.Orders
+            .Include(o => o.Client)
+            .Include(o => o.PickupPoint)
+            .Include(o => o.OrderItems)
+                .ThenInclude(oi => oi.Product)
+            .ToListAsync();
+
+        MainList.ItemsSource = orders.Select(o => new
+        {
+            Title = $"Заказ №{o.Id} — {o.Status}",
+            Subtitle = $"{o.Client?.FullName} | {o.OrderDate:dd.MM.yyyy} | {o.PickupPoint?.Address}",
+            Data = o
+        }).ToList();
+
+        ShowDefaultMessage();
+    }
+
+    private void MainList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (MainList.SelectedItem == null)
+        {
+            ShowDefaultMessage();
+            return;
+        }
+
+        dynamic item = MainList.SelectedItem;
+        object data = item.Data;
+
+        if (data is Product p)
+            ShowProductDetails(p);
+        else if (data is Order o)
+            ShowOrderDetails(o);
+    }
+
+    private void MainList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (MainList.SelectedItem == null || !_session.CanEdit) return;
+
+        dynamic item = MainList.SelectedItem;
+        object data = item.Data;
+
+        if (_showProducts && data is Product p)
+            new AddProductWindow(p.Article).ShowDialog();
+        else if (!_showProducts && data is Order o)
+            new AddOrderWindow(o.Id).ShowDialog();
+
+        RefreshView();
+    }
+
+    private void Add_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_session.CanEdit)
+        {
+            MessageBox.Show("Добавлять товары и заказы может только администратор.",
+                "Доступ запрещён", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (_showProducts)
+            new AddProductWindow().ShowDialog();
+        else
+            new AddOrderWindow().ShowDialog();
+
+        RefreshView();
+    }
+
+    private void Edit_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_session.CanEdit)
+        {
+            MessageBox.Show("Редактировать товары и заказы может только администратор.",
+                "Доступ запрещён", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (MainList.SelectedItem == null)
+        {
+            MessageBox.Show("Выберите элемент для редактирования.",
+                "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        dynamic item = MainList.SelectedItem;
+        object data = item.Data;
+
+        if (_showProducts && data is Product p)
+            new AddProductWindow(p.Article).ShowDialog();
+        else if (!_showProducts && data is Order o)
+            new AddOrderWindow(o.Id).ShowDialog();
+
+        RefreshView();
+    }
+
+    private async void Delete_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_session.CanEdit)
+        {
+            MessageBox.Show("Удалять товары и заказы может только администратор.",
+                "Доступ запрещён", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (MainList.SelectedItem == null)
+        {
+            MessageBox.Show("Выберите элемент для удаления.",
+                "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (MessageBox.Show("Удалить элемент?", "Подтверждение",
+            MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            using var db = new ApplicationDbContext();
+            dynamic item = MainList.SelectedItem;
+            object data = item.Data;
+
+            if (_showProducts && data is Product p)
+            {
+                // Проверяем, есть ли товар в заказах
+                var inOrders = await db.OrderItems.AnyAsync(oi => oi.ProductArticle == p.Article);
+                if (inOrders)
+                {
+                    MessageBox.Show("Нельзя удалить товар, который присутствует в заказах.",
+                        "Невозможно удалить", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                db.Products.Remove(p);
+            }
+            else if (!_showProducts && data is Order o)
+            {
+                var items = await db.OrderItems.Where(oi => oi.OrderId == o.Id).ToListAsync();
+                db.OrderItems.RemoveRange(items);
+                db.Orders.Remove(o);
+            }
+
+            await db.SaveChangesAsync();
+            await LoadDataAsync();
+            MessageBox.Show("Элемент успешно удалён.", "Успех",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Ошибка при удалении: {ex.Message}",
+                "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void Refresh_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshView();
+    }
+
+    private void ViewModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModeCombo.SelectedItem == null) return;
+        _showProducts = ViewModeCombo.SelectedIndex == 0;
+        RefreshView();
+    }
+
+    /// <summary>
+    /// Кнопка «Заказы» — переход к просмотру заказов
+    /// </summary>
+    private void OrdersMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModeCombo.SelectedIndex = 1;
+        _showProducts = false;
+        RefreshView();
+    }
+
+    private async void ImportCsv_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_session.CanEdit)
+        {
+            MessageBox.Show("Импорт данных может выполнять только администратор.",
+                "Доступ запрещён", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var dir = FindImportsDir();
+        if (dir == null || !Directory.Exists(dir))
+        {
+            MessageBox.Show("Папка Docs/imports не найдена.",
+                "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        if (MessageBox.Show($"Импортировать данные из\n{dir}?\n\nСуществующие данные будут заменены.",
+            "Импорт", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            var importer = new CsvImporter(dir);
+            await importer.ImportAllAsync();
+            MessageBox.Show("Импорт завершён!", "Успех",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            RefreshView();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Ошибка импорта: {ex.Message}",
+                "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// Выход на экран входа (авторизации)
+    /// </summary>
+    private void Logout_Click(object sender, RoutedEventArgs e)
+    {
+        _session.Logout();
+
+        // Закрываем главное окно
+        var win = Application.Current.MainWindow;
+        win.Close();
+
+        // Показываем окно входа заново
+        var app = (App)Application.Current;
+        app.RestartToLogin();
+    }
+
+    private void Exit_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
+
+    private void RefreshView() => _ = LoadDataAsync();
+
+    private void UpdateMenuVisibility()
+    {
+        if (AddMenuItem != null)
+        {
+            var vis = _session.CanEdit ? Visibility.Visible : Visibility.Collapsed;
+            AddMenuItem.Visibility = vis;
+            EditMenuItem.Visibility = vis;
+            DeleteMenuItem.Visibility = vis;
+            ContextMenuSeparator.Visibility = vis;
+        }
+    }
+
+    private void ShowDefaultMessage()
+    {
+        if (DetailsPanel == null) return;
+
+        DetailsPanel.Content = new TextBlock
+        {
+            Text = "Выберите элемент для просмотра",
+            FontSize = 16,
+            FontFamily = new FontFamily("Times New Roman"),
+            Foreground = Brushes.Gray,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+    }
+
+    private void ShowDetailsError(string msg)
+    {
+        if (DetailsPanel == null) return;
+
+        DetailsPanel.Content = new TextBlock
+        {
+            Text = "Ошибка: " + msg,
+            FontSize = 14,
+            FontFamily = new FontFamily("Times New Roman"),
+            Foreground = Brushes.Red,
+            TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+    }
+
+    private static string? FindImportsDir()
+    {
+        var dir = AppDomain.CurrentDomain.BaseDirectory;
+        var current = new DirectoryInfo(dir);
+        for (int i = 0; i < 6; i++)
+        {
+            var candidate = Path.Combine(current.FullName, "Docs", "imports");
+            if (Directory.Exists(candidate)) return candidate;
+            if (current.Parent != null) current = current.Parent; else break;
+        }
+        return null;
+    }
+
+    // показывает информацию о товаре справа, включая фото если есть
+    private void ShowProductDetails(Product p)
+    {
+        var wrapper = new WrapPanel { Margin = new Thickness(10) };
+        var textPanel = new StackPanel { Width = 300, Margin = new Thickness(0, 0, 15, 0) };
+        textPanel.Children.Add(Info("Артикул", p.Article));
+        textPanel.Children.Add(Info("Название", p.Name));
+        textPanel.Children.Add(Info("Категория", p.Category?.Name ?? "—"));
+        textPanel.Children.Add(Info("Производитель", p.Manufacturer?.Name ?? "—"));
+        textPanel.Children.Add(Info("Поставщик", p.Supplier?.Name ?? "—"));
+        textPanel.Children.Add(Info("Цена", $"{p.Price} руб."));
+        textPanel.Children.Add(Info("Скидка", $"{p.DiscountPercent}%"));
+        textPanel.Children.Add(Info("Остаток", $"{p.StockQuantity}"));
+        if (!string.IsNullOrEmpty(p.Description))
+            textPanel.Children.Add(Info("Описание", p.Description));
+        wrapper.Children.Add(textPanel);
+
+        // Всегда показываем фото или заглушку
+        var photoBorder = CreatePhotoImage(p.PhotoPath);
+        if (photoBorder != null)
+            wrapper.Children.Add(photoBorder);
+
+        DetailsPanel.Content = wrapper;
+    }
+
+    // показывает детали заказа
+    private void ShowOrderDetails(Order o)
+    {
+        var panel = new StackPanel { Margin = new Thickness(10) };
+        panel.Children.Add(Info("Номер", $"{o.Id}"));
+        panel.Children.Add(Info("Статус", o.Status));
+        panel.Children.Add(Info("Клиент", o.Client?.FullName ?? "—"));
+        panel.Children.Add(Info("Пункт выдачи", o.PickupPoint?.Address ?? "—"));
+        panel.Children.Add(Info("Дата заказа", $"{o.OrderDate:dd.MM.yyyy}"));
+        panel.Children.Add(Info("Код получения", $"{o.PickupCode}"));
+        var itemsText = string.Join("\n", o.OrderItems.Select(oi =>
+            $"  {oi.Product?.Name ?? oi.ProductArticle} × {oi.Quantity}"));
+        panel.Children.Add(Info("Состав заказа", itemsText));
+        decimal total = o.OrderItems.Sum(oi =>
+            (oi.Product?.Price * (1 - (oi.Product?.DiscountPercent ?? 0) / 100m) ?? 0) * oi.Quantity);
+        panel.Children.Add(Info("Итого", $"{total} руб."));
+        DetailsPanel.Content = panel;
+    }
+
+    private static TextBlock Info(string label, string value)
+    {
+        var tb = new TextBlock
+        {
+            Margin = new Thickness(0, 3, 0, 3),
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = new FontFamily("Times New Roman")
+        };
+        tb.Inlines.Add(new Run(label) { FontWeight = FontWeights.Bold });
+        tb.Inlines.Add(new Run($": {value}"));
+        return tb;
+    }
+
+    // загружает фото товара из файла, ищет в images если путь не абсолютный
+    // если фото нет — показывает заглушку picture.png из ресурсов
+    private static Border? CreatePhotoImage(string? photoPath)
+    {
+        try
+        {
+            string? fullPath = null;
+
+            // 1. Пробуем загрузить по заданному пути
+            if (!string.IsNullOrEmpty(photoPath) && File.Exists(photoPath))
+                fullPath = photoPath;
+
+            // 2. Ищем в папке images рядом с приложением
+            if (fullPath == null && !string.IsNullOrEmpty(photoPath))
+            {
+                var fileName = Path.GetFileName(photoPath);
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var candidate = Path.Combine(baseDir, "images", fileName);
+                if (File.Exists(candidate))
+                    fullPath = candidate;
+                else
+                {
+                    var current = new DirectoryInfo(baseDir);
+                    for (int i = 0; i < 6; i++)
+                    {
+                        candidate = Path.Combine(current.FullName, "images", fileName);
+                        if (File.Exists(candidate)) { fullPath = candidate; break; }
+                        if (current.Parent != null) current = current.Parent; else break;
+                    }
+                }
+            }
+
+            // 3. Если фото не найдено — используем заглушку picture.png
+            if (fullPath == null)
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var stubPath = Path.Combine(baseDir, "images", "picture.png");
+                if (File.Exists(stubPath))
+                    fullPath = stubPath;
+                else
+                {
+                    var current = new DirectoryInfo(baseDir);
+                    for (int i = 0; i < 6; i++)
+                    {
+                        stubPath = Path.Combine(current.FullName, "images", "picture.png");
+                        if (File.Exists(stubPath)) { fullPath = stubPath; break; }
+                        if (current.Parent != null) current = current.Parent; else break;
+                    }
+                }
+            }
+
+            if (fullPath == null) return null;
+
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.UriSource = new Uri(fullPath);
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.DecodePixelWidth = 200;
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            var image = new System.Windows.Controls.Image
+            {
+                Source = bitmap,
+                Stretch = Stretch.Uniform,
+                MaxWidth = 200,
+                MaxHeight = 250
+            };
+
+            return new Border
+            {
+                Child = image,
+                BorderBrush = Brushes.LightGray,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(5),
+                VerticalAlignment = VerticalAlignment.Top
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}

@@ -1,0 +1,43 @@
+-- =============================================
+-- Скрипт добавления начальных ролей и пользователей
+-- Запускать после init_db.sql
+-- =============================================
+-- Команда запуска (из терминала):
+-- psql -U postgres -d hodotaev -f C:\Users\haermaeus_mora\source\repos\DemoExam\DBSchema\seed_users.sql
+
+\c hodotaev
+
+-- 1. Добавляем роли (если нет)
+INSERT INTO roles (name)
+VALUES ('user'), ('admin')
+ON CONFLICT DO NOTHING;
+
+-- 2. Добавляем начальных пользователей
+-- Пароль для обоих: 12345
+-- Хеш создаётся через SHA256 от строки "12345"
+
+-- Пользователь (роль: user, id=1)
+INSERT INTO users (login, password_hash, full_name, role_id)
+VALUES (
+    'user',
+    'WZRHGrsBESr8wYFZ9sx0tPURuZgG2lmzyvWpwXPKz8U=',
+    'Иванов Иван Иванович',
+    1
+) ON CONFLICT DO NOTHING;
+
+-- Администратор (роль: admin, id=2)
+INSERT INTO users (login, password_hash, full_name, role_id)
+VALUES (
+    'admin',
+    'WZRHGrsBESr8wYFZ9sx0tPURuZgG2lmzyvWpwXPKz8U=',
+    'Администратор Системы',
+    2
+) ON CONFLICT DO NOTHING;
+
+-- 3. Даём права на чтение/запись
+GRANT ALL ON ALL TABLES IN SCHEMA public TO app;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO app;
+
+\echo 'Начальные роли и пользователи добавлены.'
+\echo 'Логин: user, пароль: 12345 (роль: пользователь)'
+\echo 'Логин: admin, пароль: 12345 (роль: администратор)'

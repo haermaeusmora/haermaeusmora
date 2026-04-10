@@ -1,0 +1,32 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace pgDataAccess.Models;
+
+[Table("users")]
+public class User
+{
+    [Key]
+    [Column("id")]
+    public int Id { get; set; }
+
+    [Required]
+    [Column("login")]
+    public string Login { get; set; } = string.Empty;
+
+    [Required]
+    [Column("password_hash")]
+    public string PasswordHash { get; set; } = string.Empty;
+
+    [Required]
+    [Column("full_name")]
+    public string FullName { get; set; } = string.Empty;
+
+    [Column("role_id")]
+    public int RoleId { get; set; }
+
+    [ForeignKey(nameof(RoleId))]
+    public Role? Role { get; set; }
+
+    public ICollection<Order> Orders { get; set; } = new List<Order>();
+}

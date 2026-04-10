@@ -1,0 +1,75 @@
+using pgDataAccess.Models;
+
+namespace pgDataAccess.Services;
+
+/// <summary>
+/// Синглтон для хранения текущего авторизованного пользователя
+/// </summary>
+public sealed class Session
+{
+    private static readonly Session _instance = new();
+
+    public static Session Instance => _instance;
+
+    public User? CurrentUser { get; private set; }
+
+    /// <summary>
+    /// Текущая роль: "guest", "user", "manager", "admin"
+    /// </summary>
+    public string Role { get; private set; } = "guest";
+
+    /// <summary>
+    /// ФИО текущего пользователя (или "Гость")
+    /// </summary>
+    public string DisplayName => CurrentUser?.FullName ?? "Гость";
+
+    public bool IsAuthenticated => CurrentUser != null;
+    public bool IsGuest => Role == "guest";
+    public bool IsUser => Role == "user";
+    public bool IsManager => Role == "manager";
+    public bool IsAdmin => Role == "admin";
+
+    /// <summary>
+    /// Может ли текущий пользователь добавлять/редактировать/удалять товары и заказы
+    /// </summary>
+    public bool CanEdit => IsAdmin;
+
+    /// <summary>
+    /// Может ли текущий пользователь видеть заказы (менеджер и админ)
+    /// </summary>
+    public bool CanViewOrders => IsManager || IsAdmin;
+
+    /// <summary>
+    /// Доступны ли фильтрация/сортировка/поиск (менеджер и админ)
+    /// </summary>
+    public bool CanFilterSearch => IsManager || IsAdmin;
+
+    private Session() { }
+
+    /// <summary>
+    /// Войти как авторизованный пользователь
+    /// </summary>
+    public void SetUser(User user)
+    {
+        CurrentUser = user;
+        Role = user.Role?.Name?.ToLowerInvariant() ?? "user";
+    }
+
+    /// <summary>
+    /// Войти как гость
+    /// </summary>
+    public void SetGuest()
+    {
+        CurrentUser = null;
+        Role = "guest";
+    }
+
+    /// <summary>
+    /// Выйти из системы
+    /// </summary>
+    public void Logout()
+    {
+        CurrentUser = null;
+        Role = "guest";
+    }
+}

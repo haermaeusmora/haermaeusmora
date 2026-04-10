@@ -1,0 +1,42 @@
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+namespace pgDataAccess.Models;
+
+[Table("orders")]
+public class Order
+{
+    [Key]
+    [Column("id")]
+    public int Id { get; set; }
+
+    [Column("client_id")]
+    public int ClientId { get; set; }
+
+    [Column("pickup_point_id")]
+    public int PickupPointId { get; set; }
+
+    [Column("order_date")]
+    public DateTime OrderDate { get; set; }
+
+    [Column("delivery_date")]
+    public DateTime DeliveryDate { get; set; }
+
+    [Required]
+    [Column("status")]
+    public string Status { get; set; } = "Новый";
+
+    [Column("pickup_code")]
+    public int PickupCode { get; set; }
+
+    [ForeignKey(nameof(ClientId))]
+    public User? Client { get; set; }
+
+    [ForeignKey(nameof(PickupPointId))]
+    public PickupPoint? PickupPoint { get; set; }
+
+    public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+
+    [NotMapped]
+    public decimal TotalAmount => OrderItems.Sum(oi => oi.TotalPrice);
+}

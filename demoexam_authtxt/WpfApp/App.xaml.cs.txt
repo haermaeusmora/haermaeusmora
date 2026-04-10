@@ -1,0 +1,72 @@
+// точка входа приложения.
+// при запуске создаёт бд, добавляет начальные данные, показывает окно авторизации.
+// после входа (или гостевого входа) показывает mainwindow.
+
+using System.Windows;
+using pgDataAccess;
+using pgDataAccess.Services;
+
+namespace WpfApp;
+
+public partial class App : Application
+{
+    /// <summary>
+    /// Перезапуск — возврат на экран авторизации
+    /// </summary>
+    public void RestartToLogin()
+    {
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        var loginWindow = new LoginWindow();
+        var result = loginWindow.ShowDialog();
+
+        if (result == true)
+        {
+            MainWindow = new MainWindow();
+            MainWindow.Show();
+            ShutdownMode = ShutdownMode.OnMainWindowClose;
+        }
+        else
+        {
+            Shutdown();
+        }
+    }
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        // Пока не закрывать при закрытии окон (авторизация -> главное окно)
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        base.OnStartup(e);
+
+        try
+        {
+            using var db = new ApplicationDbContext();
+            db.Database.EnsureCreated();
+            AuthService.SeedData(db);
+
+            // Показываем окно авторизации
+            var loginWindow = new LoginWindow();
+            var result = loginWindow.ShowDialog();
+
+            if (result == true)
+            {
+                // Успешный вход (или гость) — показываем главное окно
+                MainWindow = new MainWindow();
+                MainWindow.Show();
+                ShutdownMode = ShutdownMode.OnMainWindowClose;
+            }
+            else
+            {
+                // Отмена — закрываем приложение
+                Shutdown();
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Ошибка при запуске: {ex.Message}", "Ошибка",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+        }
+    }
+}

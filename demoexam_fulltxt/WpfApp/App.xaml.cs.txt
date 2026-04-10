@@ -1,0 +1,20 @@
+// точка входа приложения.
+// при запуске создаёт бд через ensurecreated и показывает mainwindow.
+
+using System.Windows;
+using pgDataAccess;
+
+namespace WpfApp;
+
+public partial class App : Application
+{
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+
+        using var db = new ApplicationDbContext();
+        db.Database.EnsureCreated();
+
+        new MainWindow().Show();
+    }
+}

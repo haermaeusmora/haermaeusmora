@@ -1,0 +1,103 @@
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.EntityFrameworkCore;
+using pgDataAccess.Models;
+
+namespace pgDataAccess.Services;
+
+/// <summary>
+/// Сервис для авторизации и хеширования паролей
+/// </summary>
+public class AuthService
+{
+    private const string PasswordHash12345 = "WZRHGrsBESr8wYFZ9sx0tPURuZgG2lmzyvWpwXPKz8U=";
+
+    /// <summary>
+    /// Авторизует пользователя по логину и паролю
+    /// </summary>
+    public async Task<User?> AuthenticateAsync(string login, string password)
+    {
+        using var db = new ApplicationDbContext();
+        var user = await db.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Login == login);
+
+        if (user == null)
+            return null;
+
+        var hash = HashPassword(password);
+        if (user.PasswordHash != hash)
+            return null;
+
+        return user;
+    }
+
+    /// <summary>
+    /// Хеширует пароль с использованием SHA256
+    /// </summary>
+    public static string HashPassword(string password)
+    {
+        using var sha256 = SHA256.Create();
+        var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+        return Convert.ToBase64String(hash);
+    }
+
+    /// <summary>
+    /// Проверяет, является ли пользователь администратором
+    /// </summary>
+    public static bool IsAdmin(User user)
+    {
+        return user.Role?.Name.Equals("admin", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    /// <summary>
+    /// Создаёт начальные роли и пользователей если их нет.
+    /// Обновляет хеши паролей существующих тестовых пользователей.
+    /// </summary>
+    public static void SeedData(ApplicationDbContext db)
+    {
+        // Создаём роли: user, manager, admin
+        var roleNames = new[] { "user", "manager", "admin" };
+        foreach (var roleName in roleNames)
+        {
+            if (!db.Roles.Any(r => r.Name == roleName))
+            {
+                db.Roles.Add(new Role { Name = roleName });
+            }
+        }
+        db.SaveChanges();
+
+        var userRole = db.Roles.First(r => r.Name == "user");
+        var managerRole = db.Roles.First(r => r.Name == "manager");
+        var adminRole = db.Roles.First(r => r.Name == "admin");
+
+        // Принудительно обновляем пароли тестовых пользователей
+        EnsureUser(db, "user", PasswordHash12345, "Иванов Иван Иванович", userRole.Id);
+        EnsureUser(db, "manager", PasswordHash12345, "Петрова Мария Сергеевна", managerRole.Id);
+        EnsureUser(db, "admin", PasswordHash12345, "Администратор Системы", adminRole.Id);
+
+        db.SaveChanges();
+    }
+
+    private static void EnsureUser(ApplicationDbContext db, string login, string hash, string fullName, int roleId)
+    {
+        var user = db.Users.FirstOrDefault(u => u.Login == login);
+        if (user == null)
+        {
+            db.Users.Add(new User
+            {
+                Login = login,
+                PasswordHash = hash,
+                FullName = fullName,
+                RoleId = roleId
+            });
+        }
+        else
+        {
+            // Обновляем хеш и данные на случай если были изменены
+            user.PasswordHash = hash;
+            user.FullName = fullName;
+            user.RoleId = roleId;
+        }
+    }
+}
